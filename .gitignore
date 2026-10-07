@@ -1,0 +1,9 @@
+cmake-build-*/
+build/
+.build/
+.idea/workspace.xml
+.idea/shelf/
+/data/udpipe/*.udpipe
+/data/hunspell/*.aff
+/data/hunspell/*.dic
+/models/*.bin
