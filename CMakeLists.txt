@@ -31,7 +31,18 @@ FetchContent_Declare(hunspell
     URL https://github.com/hunspell/hunspell/releases/download/v1.7.2/hunspell-1.7.2.tar.gz
     URL_HASH SHA256=11ddfa39afe28c28539fe65fc4f1592d410c1e9b6dd7d8a91ca25d85e9ec65b8
     SOURCE_SUBDIR none)
-FetchContent_MakeAvailable(eigen cli11 udpipe hunspell)
+FetchContent_Declare(imgui
+    URL https://github.com/ocornut/imgui/archive/refs/tags/v1.92.9b.tar.gz
+    URL_HASH SHA256=21d8a0a565e85dce943e375db00812c2f3f0ab21f3f0f7964e364a63422d7f99
+    SOURCE_SUBDIR none)
+FetchContent_Declare(glfw
+    URL https://github.com/glfw/glfw/releases/download/3.5.1/glfw-3.5.1.zip
+    URL_HASH SHA256=ea79bc5feffc254c87291980c2d0bce9acebb68c4983b79f961dcd2cb8a611a0)
+set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(GLFW_INSTALL OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(eigen cli11 udpipe hunspell imgui glfw)
 
 add_library(eigen INTERFACE)
 target_include_directories(eigen SYSTEM INTERFACE ${eigen_SOURCE_DIR})
@@ -98,4 +109,24 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 endif()
 if(MINGW)
     target_link_options(HowSpeak PRIVATE -static-libgcc -static-libstdc++)
+endif()
+
+find_package(OpenGL REQUIRED)
+add_library(imgui STATIC
+    ${imgui_SOURCE_DIR}/imgui.cpp
+    ${imgui_SOURCE_DIR}/imgui_draw.cpp
+    ${imgui_SOURCE_DIR}/imgui_tables.cpp
+    ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+    ${imgui_SOURCE_DIR}/misc/cpp/imgui_stdlib.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp)
+target_include_directories(imgui SYSTEM PUBLIC ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends ${imgui_SOURCE_DIR}/misc/cpp)
+target_link_libraries(imgui PUBLIC glfw OpenGL::GL)
+target_compile_options(imgui PRIVATE $<$<CXX_COMPILER_ID:GNU,Clang>:-w> $<$<CXX_COMPILER_ID:MSVC>:/w>)
+
+add_executable(HowSpeakUI WIN32 src/ui/main.cpp)
+target_link_libraries(HowSpeakUI PRIVATE howspeak_core imgui)
+target_compile_options(HowSpeakUI PRIVATE ${HOWSPEAK_WARNINGS})
+if(MINGW)
+    target_link_options(HowSpeakUI PRIVATE -static-libgcc -static-libstdc++)
 endif()
