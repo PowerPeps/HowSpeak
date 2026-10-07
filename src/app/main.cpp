@@ -75,6 +75,12 @@ int main(int argc, char** argv) {
                              "Share of targets drawn as random typologies outside the atlas")
         ->capture_default_str()
         ->check(CLI::Range(0.0, 1.0));
+    reordererCmd->add_option("--evaluation", reordererOptions.evaluation, "Sentences per typology kind in the final report")
+        ->capture_default_str()
+        ->check(CLI::PositiveNumber);
+    reordererCmd->add_option("--checkpoint", reordererOptions.checkpointEvery, "Steps between checkpoints")
+        ->capture_default_str()
+        ->check(CLI::PositiveNumber);
 
     auto* translateCmd = app.add_subcommand("translate", "Rewrite sentences in the structure of another language");
     std::string from;
@@ -125,6 +131,9 @@ int main(int argc, char** argv) {
             };
             show("agreement, WALS sample:", report.atlas);
             show("agreement, unseen typology:", report.unseen);
+            for (std::size_t i = 0; i < std::min<std::size_t>(report.errors.size(), 15); ++i) {
+                std::println("  {:6d}  {}", report.errors[i].second, report.errors[i].first);
+            }
             reorderer.save(paths.reorderer());
             std::println("saved {}", paths.reorderer().string());
         } else if (*translateCmd) {

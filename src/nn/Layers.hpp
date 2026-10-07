@@ -29,7 +29,8 @@ public:
     explicit Adam(float learningRate, float weightDecay = 0.0F, float beta1 = 0.9F, float beta2 = 0.999F,
                   float epsilon = 1e-8F);
 
-    void step(const std::vector<Parameter*>& parameters);
+    // clipNorm > 0 rescales the gradients whose global L2 norm exceeds it.
+    void step(const std::vector<Parameter*>& parameters, float clipNorm = 0.0F);
     void setLearningRate(float lr) noexcept { learningRate_ = lr; }
 
 private:

@@ -20,7 +20,8 @@ constexpr std::array<std::string_view, 17> kUpos = {
     "PART", "PRON", "PROPN", "PUNCT", "SCONJ", "SYM", "VERB", "X",
 };
 constexpr std::size_t kFlags = 16;
-constexpr std::size_t kPosition = 3 + 4 + 2;
+constexpr int kOffsetRange = 8;  // signed offsets to the head beyond +-8 share the edge bins
+constexpr std::size_t kPosition = 3 + (2 * kOffsetRange + 1) + 5;
 
 template <std::size_t N>
 std::size_t lookup(const std::array<std::string_view, N>& table, std::string_view value, std::size_t fallback) {
@@ -80,10 +81,14 @@ void Encoder::encode(const Group& group, const Item& item, std::span<float> out)
         return i.baseRelation == "aux" || i.baseRelation == "cop";
     }));
 
+    const int offset = item.side * (item.isHead ? 0 : item.proximity + 1);
     w.oneHot(3, static_cast<std::size_t>(item.side + 1));
-    w.oneHot(4, static_cast<std::size_t>(std::min(item.proximity, 3)));
+    w.oneHot(2 * kOffsetRange + 1, static_cast<std::size_t>(std::clamp(offset, -kOffsetRange, kOffsetRange) + kOffsetRange));
+    w.scalar(static_cast<double>(offset) / 8.0);
+    w.scalar(static_cast<double>(item.proximity) / 8.0);
     w.scalar(item.rank);
     w.scalar(static_cast<double>(group.items.size()) / 10.0);
+    w.scalar(static_cast<double>(group.negatives) / 2.0);
 }
 
 }

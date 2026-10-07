@@ -1,9 +1,16 @@
 #include "nn/Layers.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <span>
 
 namespace howspeak::nn {
+
+namespace {
+
+constexpr Index kColumnBlock = 128;
+
+}
 
 void Parameter::init(Index rows, Index cols, float scale, std::mt19937_64& rng) {
     std::uniform_real_distribution<float> dist(-scale, scale);
@@ -19,8 +26,20 @@ void Parameter::init(Index rows, Index cols, float scale, std::mt19937_64& rng) 
 Adam::Adam(float learningRate, float weightDecay, float beta1, float beta2, float epsilon)
     : learningRate_(learningRate), weightDecay_(weightDecay), beta1_(beta1), beta2_(beta2), epsilon_(epsilon) {}
 
-void Adam::step(const std::vector<Parameter*>& parameters) {
+void Adam::step(const std::vector<Parameter*>& parameters, float clipNorm) {
     ++t_;
+    if (clipNorm > 0.0F) {
+        double squared = 0.0;
+        for (const Parameter* p : parameters) {
+            squared += static_cast<double>(p->grad.squaredNorm());
+        }
+        const auto norm = static_cast<float>(std::sqrt(squared));
+        if (norm > clipNorm) {
+            for (Parameter* p : parameters) {
+                p->grad *= clipNorm / norm;
+            }
+        }
+    }
     const float c1 = 1.0F - std::pow(beta1_, static_cast<float>(t_));
     const float c2 = 1.0F - std::pow(beta2_, static_cast<float>(t_));
     for (Parameter* p : parameters) {
@@ -41,20 +60,46 @@ Linear::Linear(Index in, Index out, std::mt19937_64& rng) {
     bias.init(out, 1, 0.0F, rng);
 }
 
+// Large batches are split into column blocks processed in parallel; inside an enclosing
+// parallel region the pragmas are inactive and the work stays on the calling thread.
 Matrix Linear::forward(const Matrix& x) const {
-    Matrix y = weight.value * x;
+    Matrix y(weight.value.rows(), x.cols());
+    const Index n = x.cols();
+#pragma omp parallel for schedule(static) if (n >= 2 * kColumnBlock)
+    for (Index c = 0; c < n; c += kColumnBlock) {
+        const Index w = std::min(kColumnBlock, n - c);
+        y.middleCols(c, w).noalias() = weight.value * x.middleCols(c, w);
+    }
     y.colwise() += bias.value.col(0);
     return y;
 }
 
 void Linear::accumulate(const Matrix& x, const Matrix& dy) {
-    weight.grad.noalias() += dy * x.transpose();
+    const Index n = x.cols();
+#pragma omp parallel if (n >= 2 * kColumnBlock)
+    {
+        Matrix partial = Matrix::Zero(weight.value.rows(), weight.value.cols());
+#pragma omp for schedule(static)
+        for (Index c = 0; c < n; c += kColumnBlock) {
+            const Index w = std::min(kColumnBlock, n - c);
+            partial.noalias() += dy.middleCols(c, w) * x.middleCols(c, w).transpose();
+        }
+#pragma omp critical
+        weight.grad += partial;
+    }
     bias.grad.col(0) += dy.rowwise().sum();
 }
 
 Matrix Linear::backward(const Matrix& x, const Matrix& dy) {
     accumulate(x, dy);
-    return weight.value.transpose() * dy;
+    Matrix dx(weight.value.cols(), dy.cols());
+    const Index n = dy.cols();
+#pragma omp parallel for schedule(static) if (n >= 2 * kColumnBlock)
+    for (Index c = 0; c < n; c += kColumnBlock) {
+        const Index w = std::min(kColumnBlock, n - c);
+        dx.middleCols(c, w).noalias() = weight.value.transpose() * dy.middleCols(c, w);
+    }
+    return dx;
 }
 
 void Linear::save(core::BinaryWriter& w) const {

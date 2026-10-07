@@ -46,7 +46,7 @@ FetchContent_MakeAvailable(eigen cli11 udpipe hunspell imgui glfw)
 
 add_library(eigen INTERFACE)
 target_include_directories(eigen SYSTEM INTERFACE ${eigen_SOURCE_DIR})
-target_compile_definitions(eigen INTERFACE EIGEN_MPL2_ONLY)
+target_compile_definitions(eigen INTERFACE EIGEN_MPL2_ONLY EIGEN_DONT_PARALLELIZE)
 
 add_library(cli11 INTERFACE)
 target_include_directories(cli11 SYSTEM INTERFACE ${cli11_SOURCE_DIR}/include)
@@ -72,6 +72,7 @@ add_library(howspeak_core STATIC
     src/core/Binary.cpp
     src/wals/Database.cpp
     src/nn/Layers.cpp
+    src/nn/Attention.cpp
     src/nn/Imputer.cpp
     src/syntax/Sentence.cpp
     src/syntax/Conllu.cpp
@@ -87,7 +88,8 @@ add_library(howspeak_core STATIC
     src/transfer/Realizer.cpp
     src/transfer/Pipeline.cpp)
 target_include_directories(howspeak_core PUBLIC src)
-target_link_libraries(howspeak_core PUBLIC eigen udpipe hunspell)
+find_package(OpenMP REQUIRED COMPONENTS CXX)
+target_link_libraries(howspeak_core PUBLIC eigen udpipe hunspell OpenMP::OpenMP_CXX)
 target_compile_definitions(howspeak_core PUBLIC HOWSPEAK_ROOT="${CMAKE_CURRENT_SOURCE_DIR}")
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
@@ -112,7 +114,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 endif()
 if(MINGW)
     target_link_options(HowSpeak PRIVATE -static ${HOWSPEAK_STATIC_SHIM})
-    target_link_libraries(HowSpeak PRIVATE -Wl,--start-group stdc++exp mingwex msvcrt winpthread -Wl,--end-group)
+    target_link_libraries(HowSpeak PRIVATE -Wl,--start-group stdc++exp gomp mingwex msvcrt winpthread -Wl,--end-group)
 endif()
 
 find_package(OpenGL REQUIRED)
@@ -133,5 +135,5 @@ target_link_libraries(HowSpeakUI PRIVATE howspeak_core imgui)
 target_compile_options(HowSpeakUI PRIVATE ${HOWSPEAK_WARNINGS})
 if(MINGW)
     target_link_options(HowSpeakUI PRIVATE -static ${HOWSPEAK_STATIC_SHIM})
-    target_link_libraries(HowSpeakUI PRIVATE -Wl,--start-group mingwex msvcrt winpthread -Wl,--end-group)
+    target_link_libraries(HowSpeakUI PRIVATE -Wl,--start-group gomp mingwex msvcrt winpthread -Wl,--end-group)
 endif()
