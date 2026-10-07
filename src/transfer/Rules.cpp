@@ -8,6 +8,7 @@ namespace howspeak::transfer {
 
 namespace {
 
+constexpr double kClauseShift = 100.0;
 constexpr double kPunct = 1000.0;
 constexpr double kParataxis = 400.0;
 constexpr double kConj = 300.0;
@@ -29,6 +30,7 @@ constexpr double kNumeral = 25.0;
 constexpr double kComplement = 25.0;
 constexpr double kObject = 20.0;
 constexpr double kGenitive = 20.0;
+constexpr double kCompound = 15.0;
 constexpr double kAdjective = 10.0;
 constexpr double kAuxiliary = 5.0;
 constexpr double kNegation = 3.0;
@@ -37,6 +39,15 @@ constexpr double kFronted = -45.0;  // fronted auxiliary in interrogative word o
 
 double sideKey(const Item& it, double distance) {
     return it.side < 0 ? -distance : distance;
+}
+
+// Modifiers internal to a nominal or adjectival phrase stay closer to the head than clausal dependents,
+// so that a nominal predicate keeps its phrase intact around the copula.
+bool phraseInternal(const Group& group, const Item& item) {
+    const auto rel = item.baseRelation;
+    return rel == "det" || rel == "amod" || rel == "nummod" || rel == "nmod" || rel == "case" || rel == "acl" ||
+           rel == "compound" || rel == "clf" || rel == "flat" || rel == "fixed" || rel == "goeswith" ||
+           rel == "appos" || (rel == "advmod" && group.headAdjectival && !item.negative);
 }
 
 bool clauseLevel(std::string_view rel) {
@@ -304,9 +315,10 @@ Decision Rules::dependent(const Group& group, const Item& item, const Slots& slo
               : g_.adjective == Adjective::NAdj ? kAdjective
                                                 : sideKey(item, kAdjective);
     } else if (rel == "nmod" || (rel == "compound" && item.relation != "compound:prt")) {
-        d.key = g_.genitive == Genitive::GenN ? -kGenitive
-              : g_.genitive == Genitive::NGen ? kGenitive
-                                              : sideKey(item, kGenitive);
+        const double distance = rel == "compound" ? kCompound : kGenitive;
+        d.key = g_.genitive == Genitive::GenN ? -distance
+              : g_.genitive == Genitive::NGen ? distance
+                                              : sideKey(item, distance);
     } else if (rel == "acl") {
         d.key = g_.relative == Relative::NRel ? kRelative
               : g_.relative == Relative::RelN ? -kRelative
@@ -341,6 +353,9 @@ std::vector<Decision> Rules::decide(const Group& group) const {
             continue;
         }
         out[i] = dependent(group, item, slots);
+        if (!phraseInternal(group, item) && out[i].key != 0.0) {
+            out[i].key += out[i].key > 0 ? kClauseShift : -kClauseShift;
+        }
         if (out[i].key != 0.0) {
             out[i].key += (out[i].key > 0 ? 0.01 : -0.01) * static_cast<double>(item.proximity);
         }

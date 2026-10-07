@@ -95,6 +95,9 @@ std::string realize(const syntax::Sentence& s, const Plan& plan) {
         }
         Piece p;
         p.text = w.useLemma && !w.lemma.empty() ? w.lemma : w.form;
+        if (w.useLemma && wi != sourceFirst && core::utf8::startsUpper(w.form) && !core::utf8::startsUpper(p.text)) {
+            p.text = core::utf8::capitalize(p.text);
+        }
         p.op = op;
         p.first = wi;
         p.last = wi;

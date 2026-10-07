@@ -4,6 +4,7 @@
 
 #include <filesystem>
 #include <memory>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -22,6 +23,8 @@ public:
     Parser& operator=(const Parser&) = delete;
 
     [[nodiscard]] std::vector<syntax::Sentence> parse(std::string_view text) const;
+    // Universal POS of a word tagged in isolation.
+    [[nodiscard]] std::string tagWord(std::string_view word) const;
 
 private:
     std::unique_ptr<ufal::udpipe::model> model_;

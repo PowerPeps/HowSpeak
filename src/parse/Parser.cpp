@@ -72,4 +72,14 @@ std::vector<syntax::Sentence> Parser::parse(std::string_view text) const {
     return out;
 }
 
+std::string Parser::tagWord(std::string_view word) const {
+    ufal::udpipe::sentence s;
+    s.add_word(std::string(word));
+    std::string error;
+    if (!model_->tag(s, ufal::udpipe::model::DEFAULT, error)) {
+        throw std::runtime_error(std::format("UDPipe: {}", error));
+    }
+    return s.words.at(1).upostag;
+}
+
 }

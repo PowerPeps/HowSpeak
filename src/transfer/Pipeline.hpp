@@ -8,11 +8,16 @@
 #include "wals/Database.hpp"
 
 #include <filesystem>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
+
+namespace howspeak::parse {
+class Parser;
+}
 
 namespace howspeak::transfer {
 
@@ -52,6 +57,7 @@ public:
 
 private:
     void ensureTypology() const;
+    [[nodiscard]] const parse::Parser& parser(std::string_view sourceWals) const;
     [[nodiscard]] std::string iso(std::string_view walsCode) const;
 
     Paths paths_;
@@ -59,6 +65,7 @@ private:
     mutable std::unique_ptr<nn::Imputer> imputer_;
     mutable std::unique_ptr<TypologyBank> typology_;
     mutable std::unique_ptr<Reorderer> reorderer_;
+    mutable std::map<std::string, std::unique_ptr<parse::Parser>, std::less<>> parsers_;
 };
 
 }

@@ -16,7 +16,9 @@ namespace {
 
 constexpr std::size_t kMinPart = 3;
 constexpr std::size_t kMinWord = 6;
-const std::array<std::u32string, 7> kLinkers = {U"", U"s", U"es", U"n", U"en", U"er", U"e"};
+constexpr std::size_t kHomographMin = 5;
+// Linking elements are tried first so that "Orts|teil" yields "Ort", not the genitive "Orts".
+const std::array<std::u32string, 7> kLinkers = {U"es", U"en", U"er", U"s", U"n", U"e", U""};
 
 std::u32string lowerAll(std::u32string s) {
     for (auto& c : s) {
@@ -35,7 +37,9 @@ std::u32string capital(std::u32string s) {
 
 }
 
-CompoundSplitter::CompoundSplitter(const std::filesystem::path& aff, const std::filesystem::path& dic) {
+CompoundSplitter::CompoundSplitter(const std::filesystem::path& aff, const std::filesystem::path& dic,
+                                   NounOracle oracle)
+    : oracle_(std::move(oracle)) {
     if (!std::filesystem::exists(aff) || !std::filesystem::exists(dic)) {
         throw std::runtime_error(std::format("missing Hunspell dictionary '{}'", dic.string()));
     }
@@ -59,10 +63,44 @@ bool CompoundSplitter::spell(const std::u32string& word) const {
     return latin && hunspell_->spell(*latin);
 }
 
-// A noun is accepted capitalised but rejected in lower case, which filters out
-// function words such as "bei" that Hunspell also accepts sentence-initially.
+bool CompoundSplitter::capitalisedEntry(const std::u32string& word) const {
+    std::string text = core::utf8::encode(word);
+    if (latin1_) {
+        const auto latin = core::utf8::toLatin1(text);
+        if (!latin) {
+            return false;
+        }
+        text = *latin;
+    }
+    for (const auto& stem : hunspell_->stem(text)) {
+        if (core::utf8::startsUpper(latin1_ ? core::utf8::fromLatin1(stem) : stem)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// A part is a noun when its dictionary lemma is capitalised (German-style orthography), otherwise when the
+// oracle tags it NOUN; without oracle, short parts must also be rejected in lower case so that function
+// words such as "bei" are not taken for nouns.
 bool CompoundSplitter::isNoun(const std::u32string& part) const {
-    return spell(capital(part)) && !spell(lowerAll(part));
+    const auto cached = nouns_.find(part);
+    if (cached != nouns_.end()) {
+        return cached->second;
+    }
+    const std::u32string cap = capital(part);
+    bool noun = false;
+    if (spell(cap) || spell(lowerAll(part))) {
+        if (capitalisedEntry(cap)) {
+            noun = true;
+        } else if (oracle_) {
+            noun = oracle_(core::utf8::encode(lowerAll(part)));
+        } else {
+            noun = spell(cap) && (part.size() >= kHomographMin || !spell(lowerAll(part)));
+        }
+    }
+    nouns_.emplace(part, noun);
+    return noun;
 }
 
 std::vector<std::string> CompoundSplitter::split(std::string_view word) const {
@@ -72,7 +110,7 @@ std::vector<std::string> CompoundSplitter::split(std::string_view word) const {
         return {};
     }
 
-    // best[i]: fewest parts covering w[i..n) where the last part is a noun.
+    // best[i]: most parts covering w[i..n), every part being a noun (nested compounds are flattened).
     constexpr std::size_t kNone = std::numeric_limits<std::size_t>::max();
     std::vector<std::size_t> best(n + 1, kNone);
     std::vector<std::size_t> next(n + 1, 0);
@@ -80,13 +118,13 @@ std::vector<std::string> CompoundSplitter::split(std::string_view word) const {
     best[n] = 0;
     for (std::size_t i = n; i-- > 0;) {
         for (std::size_t j = i + kMinPart; j <= n; ++j) {
-            if (best[j] == kNone) {
+            if (best[j] == kNone || (i == 0 && j == n)) {
                 continue;
             }
             const bool last = j == n;
             for (const auto& linker : kLinkers) {
                 if (last && !linker.empty()) {
-                    break;
+                    continue;
                 }
                 if (j - i < kMinPart + linker.size()) {
                     continue;
@@ -99,7 +137,7 @@ std::vector<std::string> CompoundSplitter::split(std::string_view word) const {
                 if (!isNoun(stem)) {
                     continue;
                 }
-                if (best[j] + 1 < best[i]) {
+                if (best[i] == kNone || best[j] + 1 > best[i]) {
                     best[i] = best[j] + 1;
                     next[i] = j;
                     linkLength[i] = linker.size();
@@ -114,7 +152,7 @@ std::vector<std::string> CompoundSplitter::split(std::string_view word) const {
 
     std::vector<std::string> parts;
     for (std::size_t i = 0; i < n; i = next[i]) {
-        std::u32string part = w.substr(i, next[i] - i);
+        std::u32string part = w.substr(i, next[i] - i - linkLength[i]);
         if (i != 0) {
             part = capital(part);
         }

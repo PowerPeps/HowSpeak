@@ -57,15 +57,22 @@ std::size_t Pipeline::targetLanguage(std::string_view walsCode) const {
     return index;
 }
 
-std::vector<syntax::Sentence> Pipeline::parse(std::string_view text, std::string_view sourceWals) const {
-    const auto model = paths_.udpipe(iso(sourceWals));
+const parse::Parser& Pipeline::parser(std::string_view sourceWals) const {
+    const auto code = iso(sourceWals);
+    if (const auto it = parsers_.find(code); it != parsers_.end()) {
+        return *it->second;
+    }
+    const auto model = paths_.udpipe(code);
     if (!std::filesystem::exists(model)) {
         throw std::runtime_error(std::format(
             "no parser for '{}': expected '{}' (cmake -DLANGS={} -P scripts/fetch_resources.cmake)", sourceWals,
-            model.string(), iso(sourceWals)));
+            model.string(), code));
     }
-    const parse::Parser parser(model);
-    return parser.parse(text);
+    return *parsers_.emplace(code, std::make_unique<parse::Parser>(model)).first->second;
+}
+
+std::vector<syntax::Sentence> Pipeline::parse(std::string_view text, std::string_view sourceWals) const {
+    return parser(sourceWals).parse(text);
 }
 
 std::vector<Translation> Pipeline::transfer(std::vector<syntax::Sentence> sentences, std::string_view sourceWals,
@@ -77,8 +84,13 @@ std::vector<Translation> Pipeline::transfer(std::vector<syntax::Sentence> senten
     std::unique_ptr<parse::CompoundSplitter> splitter;
     const auto sourceIso = iso(sourceWals);
     if (std::filesystem::exists(paths_.hunspell(sourceIso, "dic"))) {
+        parse::CompoundSplitter::NounOracle oracle;
+        if (std::filesystem::exists(paths_.udpipe(sourceIso))) {
+            const auto* tagger = &parser(sourceWals);
+            oracle = [tagger](std::string_view part) { return tagger->tagWord(part) == "NOUN"; };
+        }
         splitter = std::make_unique<parse::CompoundSplitter>(paths_.hunspell(sourceIso, "aff"),
-                                                             paths_.hunspell(sourceIso, "dic"));
+                                                             paths_.hunspell(sourceIso, "dic"), std::move(oracle));
     }
     if (engine == Engine::Neural && !reorderer_) {
         if (!std::filesystem::exists(paths_.reorderer())) {

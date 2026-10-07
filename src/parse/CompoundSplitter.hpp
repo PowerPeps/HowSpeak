@@ -3,6 +3,8 @@
 #include "syntax/Sentence.hpp"
 
 #include <filesystem>
+#include <functional>
+#include <unordered_map>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -15,7 +17,10 @@ namespace howspeak::parse {
 // Splits closed compounds (e.g. German "Haustür" -> "Haus" + "Tür") with a Hunspell dictionary.
 class CompoundSplitter {
 public:
-    CompoundSplitter(const std::filesystem::path& aff, const std::filesystem::path& dic);
+    using NounOracle = std::function<bool(std::string_view)>;
+
+    // The oracle, when given, confirms that a candidate part is a noun (e.g. a POS tagger).
+    CompoundSplitter(const std::filesystem::path& aff, const std::filesystem::path& dic, NounOracle oracle = {});
     ~CompoundSplitter();
     CompoundSplitter(const CompoundSplitter&) = delete;
     CompoundSplitter& operator=(const CompoundSplitter&) = delete;
@@ -29,8 +34,11 @@ public:
 private:
     [[nodiscard]] bool spell(const std::u32string& word) const;
     [[nodiscard]] bool isNoun(const std::u32string& part) const;
+    [[nodiscard]] bool capitalisedEntry(const std::u32string& word) const;
 
     std::unique_ptr<Hunspell> hunspell_;
+    NounOracle oracle_;
+    mutable std::unordered_map<std::u32string, bool> nouns_;
     bool latin1_ = false;
 };
 
