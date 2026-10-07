@@ -243,7 +243,8 @@ Reorderer::Report Reorderer::train(const TypologyBank& typology, const Options& 
         if (step % 1000 == 0) {
             log << std::format("  step {:6d}  pairwise loss {:.4f}  operation loss {:.4f}\n", step,
                                lossPairs / 1000.0 / static_cast<double>(options.batch),
-                               lossOps / 1000.0 / static_cast<double>(options.batch));
+                               lossOps / 1000.0 / static_cast<double>(options.batch))
+                << std::flush;
             lossPairs = 0.0;
             lossOps = 0.0;
         }

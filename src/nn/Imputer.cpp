@@ -154,7 +154,8 @@ void Imputer::fit(const Options& options, const Mask& usable, std::ostream& log)
         }
         if ((epoch + 1) % 20 == 0 || epoch == 0) {
             log << std::format("  epoch {:4d}  masked cross-entropy {:.4f}\n", epoch + 1,
-                               lossSum / static_cast<double>(std::max<std::size_t>(targetSum, 1)));
+                               lossSum / static_cast<double>(std::max<std::size_t>(targetSum, 1)))
+                << std::flush;
         }
     }
 }

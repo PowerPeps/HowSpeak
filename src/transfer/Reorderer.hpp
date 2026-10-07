@@ -17,8 +17,8 @@ namespace howspeak::transfer {
 class Reorderer {
 public:
     struct Options {
-        int steps = 12000;
-        int batch = 24;
+        int steps = 40000;
+        int batch = 32;
         float learningRate = 2e-3F;
         double unseenTypologies = 0.3;  // share of training targets drawn outside the atlas
         int evaluation = 1500;
