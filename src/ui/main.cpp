@@ -1,3 +1,4 @@
+#include "core/Resources.hpp"
 #include "syntax/Conllu.hpp"
 #include "transfer/Pipeline.hpp"
 
@@ -13,6 +14,7 @@
 #include <exception>
 #include <filesystem>
 #include <format>
+#include <initializer_list>
 #include <future>
 #include <memory>
 #include <sstream>
@@ -87,30 +89,50 @@ void combo(const char* label, const std::vector<Choice>& items, int& current) {
     }
 }
 
-void loadFonts(ImGuiIO& io) {
+std::vector<std::filesystem::path> fontDirectories() {
+#if defined(_WIN32)
 #ifdef _MSC_VER
 #pragma warning(suppress : 4996)
 #endif
     const char* windir = std::getenv("WINDIR");
-    const std::filesystem::path fonts = std::filesystem::path(windir != nullptr ? windir : "C:/Windows") / "Fonts";
-    if (!std::filesystem::exists(fonts / "segoeui.ttf")) {
+    return {std::filesystem::path(windir != nullptr ? windir : "C:/Windows") / "Fonts"};
+#elif defined(__APPLE__)
+    return {"/System/Library/Fonts/Supplemental", "/Library/Fonts", "/System/Library/Fonts"};
+#else
+    return {"/usr/share/fonts/truetype/dejavu", "/usr/share/fonts/opentype/noto", "/usr/share/fonts/truetype/noto"};
+#endif
+}
+
+std::filesystem::path findFont(std::initializer_list<const char*> names) {
+    for (const auto& dir : fontDirectories()) {
+        for (const char* name : names) {
+            if (std::filesystem::exists(dir / name)) {
+                return dir / name;
+            }
+        }
+    }
+    return {};
+}
+
+// A Latin text face, plus a merged CJK fallback so that Japanese or Chinese calques display.
+void loadFonts(ImGuiIO& io) {
+    const auto base = findFont({"segoeui.ttf", "Arial Unicode.ttf", "Arial.ttf", "DejaVuSans.ttf"});
+    if (base.empty()) {
         return;
     }
-    io.Fonts->AddFontFromFileTTF((fonts / "segoeui.ttf").string().c_str(), 18.0F);
-    for (const char* fallback : {"YuGothM.ttc", "msgothic.ttc", "malgun.ttf"}) {
-        if (std::filesystem::exists(fonts / fallback)) {
-            ImFontConfig merge;
-            merge.MergeMode = true;
-            io.Fonts->AddFontFromFileTTF((fonts / fallback).string().c_str(), 18.0F, &merge);
-            break;
-        }
+    io.Fonts->AddFontFromFileTTF(base.string().c_str(), 18.0F);
+    const auto cjk = findFont({"YuGothM.ttc", "msgothic.ttc", "malgun.ttf", "Arial Unicode.ttf", "NotoSansCJK-Regular.ttc"});
+    if (!cjk.empty() && cjk != base) {
+        ImFontConfig merge;
+        merge.MergeMode = true;
+        io.Fonts->AddFontFromFileTTF(cjk.string().c_str(), 18.0F, &merge);
     }
 }
 
 }
 
 int main() {
-    const transfer::Paths paths{HOWSPEAK_ROOT};
+    const transfer::Paths paths{core::projectRoot()};
     std::unique_ptr<transfer::Pipeline> pipeline;
     std::string error;
     std::vector<Choice> sources;
@@ -126,8 +148,17 @@ int main() {
     if (glfwInit() == GLFW_FALSE) {
         return 1;
     }
+#ifdef __APPLE__
+    // macOS only offers forward-compatible core contexts, up to OpenGL 4.1.
+    constexpr const char* kGlsl = "#version 150";
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
+    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
+#else
+    constexpr const char* kGlsl = "#version 330";
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+#endif
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     GLFWwindow* window = glfwCreateWindow(960, 640, "HowSpeak", nullptr, nullptr);
     if (window == nullptr) {
@@ -143,7 +174,7 @@ int main() {
     ImGui::StyleColorsDark();
     loadFonts(io);
     ImGui_ImplGlfw_InitForOpenGL(window, true);
-    ImGui_ImplOpenGL3_Init("#version 330");
+    ImGui_ImplOpenGL3_Init(kGlsl);
 
     int source = indexOf(sources, "fre");
     int target = indexOf(targets, "jpn");

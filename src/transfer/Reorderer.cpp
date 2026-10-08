@@ -12,7 +12,9 @@
 #include <format>
 #include <map>
 #include <numbers>
+#ifdef _OPENMP
 #include <omp.h>
+#endif
 #include <ostream>
 #include <span>
 
@@ -38,6 +40,14 @@ constexpr std::array<std::string_view, kOperationCount> kOperationNames = {
 
 Index idx(std::size_t i) {
     return static_cast<Index>(i);
+}
+
+int workerThreads() {
+#ifdef _OPENMP
+    return omp_get_max_threads();
+#else
+    return 1;
+#endif
 }
 
 std::uint64_t mix(std::uint64_t x) {
@@ -298,7 +308,7 @@ Reorderer::Report Reorderer::train(const TypologyBank& typology, const Options& 
     std::uniform_real_distribution<double> unit(0.0, 1.0);
 
     // Data parallelism: each replica runs forward and backward on its shard, gradients are summed.
-    const int shards = std::max(1, std::min({omp_get_max_threads(), kMaxShards, options.batch}));
+    const int shards = std::max(1, std::min({workerThreads(), kMaxShards, options.batch}));
     std::vector<Reorderer> replicas(static_cast<std::size_t>(shards), *this);
     std::vector<std::vector<nn::Parameter*>> replicaParams;
     for (auto& r : replicas) {

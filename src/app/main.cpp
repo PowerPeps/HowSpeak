@@ -1,4 +1,5 @@
 #include "core/Csv.hpp"
+#include "core/Resources.hpp"
 #include "nn/Imputer.hpp"
 #include "syntax/Conllu.hpp"
 #include "transfer/Pipeline.hpp"
@@ -55,7 +56,7 @@ int main(int argc, char** argv) {
     argv = app.ensure_utf8(argv);
     app.require_subcommand(1);
 
-    std::string root = HOWSPEAK_ROOT;
+    std::string root = core::projectRoot().string();
     app.add_option("--root", root, "Project directory holding data/ and models/")->capture_default_str();
 
     auto* imputerCmd = app.add_subcommand("train-imputer", "Train the WALS feature imputer (denoising autoencoder)");

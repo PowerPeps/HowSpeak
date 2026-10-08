@@ -4,7 +4,9 @@
 
 #include <algorithm>
 #include <charconv>
+#include <cstdlib>
 #include <format>
+#include <span>
 #include <stdexcept>
 
 namespace howspeak::wals {
@@ -22,8 +24,17 @@ T parseNumber(const std::string& text, std::string_view what) {
     return value;
 }
 
+// std::from_chars for floating point is missing from older libc++ releases (Apple Clang).
 double parseCoordinate(const std::string& text) {
-    return text.empty() ? 0.0 : parseNumber<double>(text, "coordinate");
+    if (text.empty()) {
+        return 0.0;
+    }
+    char* end = nullptr;
+    const double value = std::strtod(text.c_str(), &end);
+    if (end != text.c_str() + text.size()) {
+        throw std::runtime_error(std::format("invalid coordinate '{}'", text));
+    }
+    return value;
 }
 
 }

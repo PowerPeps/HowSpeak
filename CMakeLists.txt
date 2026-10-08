@@ -1,5 +1,12 @@
 cmake_minimum_required(VERSION 4.3)
-project(HowSpeak LANGUAGES CXX)
+
+# macOS: universal binary by default; libc++ needs 13.3 for std::format and std::to_chars on floats.
+if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin")
+    set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "Target architectures")
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "13.3" CACHE STRING "Minimum macOS version")
+endif()
+
+project(HowSpeak LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -70,6 +77,7 @@ add_library(howspeak_core STATIC
     src/core/Csv.cpp
     src/core/Utf8.cpp
     src/core/Binary.cpp
+    src/core/Resources.cpp
     src/wals/Database.cpp
     src/nn/Layers.cpp
     src/nn/Attention.cpp
@@ -88,19 +96,30 @@ add_library(howspeak_core STATIC
     src/transfer/Realizer.cpp
     src/transfer/Pipeline.cpp)
 target_include_directories(howspeak_core PUBLIC src)
-find_package(OpenMP REQUIRED COMPONENTS CXX)
-target_link_libraries(howspeak_core PUBLIC eigen udpipe hunspell OpenMP::OpenMP_CXX)
+target_link_libraries(howspeak_core PUBLIC eigen udpipe hunspell)
+# OpenMP only speeds up training; Apple Clang ships without it and the build then runs single-threaded.
+find_package(OpenMP COMPONENTS CXX)
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(howspeak_core PUBLIC OpenMP::OpenMP_CXX)
+endif()
 target_compile_definitions(howspeak_core PUBLIC HOWSPEAK_ROOT="${CMAKE_CURRENT_SOURCE_DIR}")
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     set(HOWSPEAK_WARNINGS -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion
         -Wold-style-cast -Wnon-virtual-dtor -Woverloaded-virtual -Werror)
+    if(NOT OpenMP_CXX_FOUND)
+        list(APPEND HOWSPEAK_WARNINGS -Wno-unknown-pragmas)
+    endif()
 elseif(MSVC)
     set(HOWSPEAK_WARNINGS /W4 /permissive- /WX /utf-8)
 endif()
 target_compile_options(howspeak_core PRIVATE ${HOWSPEAK_WARNINGS})
+# A universal macOS build compiles every file for two architectures, so no host-specific tuning there.
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(howspeak_core PUBLIC $<$<CONFIG:Release>:-O3 -march=native>)
+    target_compile_options(howspeak_core PUBLIC $<$<CONFIG:Release>:-O3>)
+    if(NOT APPLE)
+        target_compile_options(howspeak_core PUBLIC $<$<CONFIG:Release>:-march=native>)
+    endif()
 endif()
 
 # The bundled winpthread.a targets UCRT; alias its setjmp entry to the msvcrt one to link it statically.
@@ -128,12 +147,29 @@ add_library(imgui STATIC
     ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp)
 target_include_directories(imgui SYSTEM PUBLIC ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends ${imgui_SOURCE_DIR}/misc/cpp)
 target_link_libraries(imgui PUBLIC glfw OpenGL::GL)
+if(APPLE)
+    target_compile_definitions(imgui PUBLIC GL_SILENCE_DEPRECATION)
+endif()
 target_compile_options(imgui PRIVATE $<$<CXX_COMPILER_ID:GNU,Clang>:-w> $<$<CXX_COMPILER_ID:MSVC>:/w>)
 
-add_executable(HowSpeakUI WIN32 src/ui/main.cpp)
+add_executable(HowSpeakUI WIN32 MACOSX_BUNDLE src/ui/main.cpp)
 target_link_libraries(HowSpeakUI PRIVATE howspeak_core imgui)
 target_compile_options(HowSpeakUI PRIVATE ${HOWSPEAK_WARNINGS})
 if(MINGW)
     target_link_options(HowSpeakUI PRIVATE -static ${HOWSPEAK_STATIC_SHIM})
     target_link_libraries(HowSpeakUI PRIVATE -Wl,--start-group gomp mingwex msvcrt winpthread -Wl,--end-group)
+endif()
+if(APPLE)
+    set_target_properties(HowSpeakUI PROPERTIES
+        OUTPUT_NAME HowSpeak
+        MACOSX_BUNDLE_BUNDLE_NAME HowSpeak
+        MACOSX_BUNDLE_GUI_IDENTIFIER io.howspeak.ui
+        MACOSX_BUNDLE_SHORT_VERSION_STRING 0.1
+        MACOSX_BUNDLE_BUNDLE_VERSION 0.1)
+    # The bundle carries the WALS tables, parser models, dictionaries and trained networks.
+    set(HOWSPEAK_BUNDLE_RESOURCES $<TARGET_BUNDLE_CONTENT_DIR:HowSpeakUI>/Resources)
+    add_custom_command(TARGET HowSpeakUI POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/data ${HOWSPEAK_BUNDLE_RESOURCES}/data
+        COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/models ${HOWSPEAK_BUNDLE_RESOURCES}/models
+        VERBATIM)
 endif()
